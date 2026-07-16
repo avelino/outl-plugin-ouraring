@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Oura Ring config",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "token": {
+      "type": "string",
+      "title": "Oura Personal Access Token",
+      "description": "Bearer token from Oura Cloud → Personal Access Tokens. Stored in the OS keychain, never in the workspace. Set it with `outl plugin secret set run.avelino.ouraring token`.",
+      "x-outl-secret": true
+    },
+    "pagePrefix": {
+      "type": "string",
+      "title": "Page prefix",
+      "description": "Daily Oura pages are written to `<prefix>-YYYY-MM-DD` (e.g. pages/ouraring-2025-11-29.md).",
+      "default": "ouraring"
+    },
+    "daysToSync": {
+      "type": "integer",
+      "title": "Days to sync",
+      "description": "How many past days to fetch, including today.",
+      "minimum": 1,
+      "default": 7
+    }
+  }
+}

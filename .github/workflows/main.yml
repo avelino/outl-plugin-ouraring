@@ -1,35 +1,21 @@
-name: Release
-
-env:
-  PLUGIN_NAME: roam-ouraring
-
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-      - run: pnpm install
-      - run: pnpm check
-      - name: Install zip
-        uses: montudor/action-zip@v1
-      - name: Release
-        run: npx semantic-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Build bundle
+        run: bun run build
+      - name: Ensure bundle is committed and up to date
+        run: git diff --exit-code -- index.js || (echo "index.js is stale — run 'bun run build' and commit it" && exit 1)

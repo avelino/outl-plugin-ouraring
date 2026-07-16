@@ -1,0 +1,45 @@
+{
+  "$schema": "https://outl.app/schemas/plugin-v1.json",
+  "id": "run.avelino.ouraring",
+  "name": "Oura Ring",
+  "version": "2.0.0",
+  "api": "^1.0",
+  "engines": {
+    "outl": ">=0.8.0"
+  },
+  "main": "index.js",
+  "description": "Sync your Oura Ring health metrics (sleep, readiness, activity, heart rate, workouts, tags) into daily outl pages.",
+  "author": "Avelino <avelinorun@gmail.com>",
+  "license": "MIT",
+  "repository": "https://github.com/avelino/outl-plugin-ouraring",
+  "category": "health",
+  "capabilities": [
+    "slash-command",
+    "toolbar-button",
+    "config-schema"
+  ],
+  "permissions": [
+    "read-page",
+    "write-page",
+    "submit-op",
+    "secrets",
+    "network:api.ouraring.com"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "oura-sync",
+        "title": "Oura: sync daily data",
+        "description": "Fetch recent Oura Ring data and write it to daily pages."
+      }
+    ],
+    "toolbar": [
+      {
+        "command": "oura-sync",
+        "icon": "💍",
+        "title": "Sync Oura Ring data"
+      }
+    ],
+    "configSchema": "config.schema.json"
+  }
+}

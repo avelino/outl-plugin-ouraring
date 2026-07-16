@@ -1,160 +1,89 @@
 /**
- * Formatting functions for displaying Oura data in Roam blocks.
+ * Pure formatting helpers. They turn raw Oura numbers into the compact strings
+ * that make up a day's summary lines. Every one returns `undefined` for a
+ * missing/invalid input so callers can drop empty parts.
  */
 
-import { isValidNumber, toTitleCase } from "./utils";
+/** True for a real, non-NaN number. */
+export function isValidNumber(value: unknown): value is number {
+  return typeof value === "number" && !Number.isNaN(value);
+}
 
-/**
- * Formats a number with optional suffix.
- */
-export function formatNumber(value?: number | null, suffix?: string): string | undefined {
+/** `52` → `"52"`, with an optional unit suffix (`"52 ms"`). */
+export function num(value?: number | null, suffix?: string): string | undefined {
   if (!isValidNumber(value)) return undefined;
   return suffix ? `${value} ${suffix}` : `${value}`;
 }
 
-/**
- * Formats a number as percentage.
- */
-export function formatPercentage(value?: number | null): string | undefined {
+/** `92` → `"92%"`. */
+export function pct(value?: number | null): string | undefined {
   if (!isValidNumber(value)) return undefined;
   return `${value}%`;
 }
 
-/**
- * Formats heart rate with average and minimum values.
- */
-export function formatHeartRate(avg?: number | null, min?: number | null): string | undefined {
-  if (!isValidNumber(avg) && !isValidNumber(min)) return undefined;
-  const parts: string[] = [];
-  if (isValidNumber(avg)) parts.push(`${avg} bpm avg`);
-  if (isValidNumber(min)) parts.push(`min ${min}`);
-  return parts.join(" / ");
-}
-
-/**
- * Formats bedtime range from start to end timestamps.
- */
-export function formatBedtime(start?: string, end?: string): string | undefined {
-  if (!start && !end) return undefined;
-  const startLabel = start ? formatTime(start) : "";
-  const endLabel = end ? formatTime(end) : "";
-  return `${startLabel}${startLabel && endLabel ? " – " : ""}${endLabel}`;
-}
-
-/**
- * Formats distance in kilometers from meters.
- */
-export function formatDistance(meters?: number | null): string | undefined {
-  if (!isValidNumber(meters)) return undefined;
-  const km = meters / 1000;
-  return `${km.toFixed(2)} km`;
-}
-
-/**
- * Formats temperature deviation with sign.
- */
-export function formatTemperature(deviation?: number | null): string | undefined {
-  if (!isValidNumber(deviation)) return undefined;
-  const sign = deviation >= 0 ? "+" : "";
-  return `${sign}${deviation.toFixed(2)}°C`;
-}
-
-/**
- * Formats seconds into human-readable duration (e.g., "2h 30m").
- */
-export function formatMinutesFromSeconds(seconds?: number | null): string | undefined {
+/** Seconds → `"7h 32m"` / `"45m"`. */
+export function duration(seconds?: number | null): string | undefined {
   if (!isValidNumber(seconds)) return undefined;
-  const totalMinutes = Math.round(seconds / 60);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours > 0) {
-    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-  }
-  return `${minutes}m`;
+  const total = Math.round(seconds / 60);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  return `${m}m`;
 }
 
-/**
- * Formats an ISO timestamp to local time (HH:MM).
- */
-export function formatTime(value?: string): string {
-  const date = value ? new Date(value) : null;
-  if (!date || Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+/** Meters → `"5.20 km"`. */
+export function km(meters?: number | null): string | undefined {
+  if (!isValidNumber(meters)) return undefined;
+  return `${(meters / 1000).toFixed(2)} km`;
 }
 
-/**
- * Formats a timestamp from ISO format to local time.
- */
-export function formatTimestamp(timestamp?: string): string {
-  if (!timestamp) return "";
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+/** Signed temperature deviation → `"+0.15°C"`. */
+export function tempDeviation(value?: number | null): string | undefined {
+  if (!isValidNumber(value)) return undefined;
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}°C`;
 }
 
-/**
- * Extracts time (HH:MM) from a time string like "HH:MM:SS" or "HH:MM:SS+00:00".
- */
-export function formatTagTime(timeStr?: string): string {
-  if (!timeStr) return "";
-  const match = timeStr.match(/^(\d{2}):(\d{2})/);
-  if (!match) return "";
-  return `${match[1]}:${match[2]}`;
+/** ISO timestamp → local `"HH:MM"`, or `""`. */
+export function hhmm(value?: string): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const h = `${d.getHours()}`.padStart(2, "0");
+  const m = `${d.getMinutes()}`.padStart(2, "0");
+  return `${h}:${m}`;
 }
 
-/**
- * Formats a YYYY-MM-DD date into Roam daily note format (e.g., "November 29th, 2025").
- */
-export function formatDailyNoteDate(date: string): string {
-  const [year, month, day] = date.split("-").map((part) => parseInt(part, 10));
-  const parsedDate = new Date(year, month - 1, day);
-  const monthName = parsedDate.toLocaleString("en", { month: "long" });
-  const dayWithOrdinal = formatOrdinal(day);
-  return `${monthName} ${dayWithOrdinal}, ${year}`;
+/** `"HH:MM:SS"` / `"HH:MM:SS+00:00"` → `"HH:MM"`. */
+export function clockTime(value?: string): string {
+  if (!value) return "";
+  const m = value.match(/^(\d{2}):(\d{2})/);
+  return m ? `${m[1]}:${m[2]}` : "";
 }
 
-/**
- * Formats a day number with ordinal suffix (1st, 2nd, 3rd, 4th, etc.).
- */
-export function formatOrdinal(day: number): string {
-  const remainder = day % 100;
-  if (remainder >= 11 && remainder <= 13) return `${day}th`;
-  switch (day % 10) {
-    case 1:
-      return `${day}st`;
-    case 2:
-      return `${day}nd`;
-    case 3:
-      return `${day}rd`;
-    default:
-      return `${day}th`;
-  }
-}
-
-/**
- * Calculates duration between two ISO timestamps and formats it.
- */
-export function calculateDuration(start?: string, end?: string): string | undefined {
+/** Duration between two ISO timestamps as `"45m"`, or `undefined`. */
+export function durationBetween(start?: string, end?: string): string | undefined {
   if (!start || !end) return undefined;
-  const startTime = Date.parse(start);
-  const endTime = Date.parse(end);
-  if (Number.isNaN(startTime) || Number.isNaN(endTime)) return undefined;
-  return formatMinutesFromSeconds(Math.max(0, (endTime - startTime) / 1000));
+  const a = Date.parse(start);
+  const b = Date.parse(end);
+  if (Number.isNaN(a) || Number.isNaN(b)) return undefined;
+  return duration(Math.max(0, (b - a) / 1000));
 }
 
-/**
- * Formats an activity name from snake_case or camelCase to Title Case.
- */
-export function formatActivityName(activity: string): string {
-  return toTitleCase(activity);
+/** snake_case / camelCase → `"Title Case"`. */
+export function titleCase(text: string): string {
+  return text
+    .replace(/_/g, " ")
+    .replace(/([A-Z])/g, " $1")
+    .trim()
+    .split(" ")
+    .filter((w) => w.length > 0)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
 }
 
-/**
- * Formats a tag type code to a readable name.
- * Removes "tag_" and "generic_" prefixes and converts to Title Case.
- */
-export function formatTagType(code?: string): string {
+/** Clean an Oura tag code (`tag_generic_meditation` → `"Meditation"`). */
+export function tagName(code?: string): string {
   if (!code) return "Tag";
-  const cleaned = code.replace(/^tag_(generic_)?/, "").replace(/_/g, " ");
-  return toTitleCase(cleaned);
+  return titleCase(code.replace(/^tag_(generic_)?/, "").replace(/_/g, " "));
 }

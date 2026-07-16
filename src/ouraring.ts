@@ -1,24 +1,20 @@
-import { MAX_DAYS_PER_REQUEST, OURA_API_BASE } from "./constants";
-import { logDebug, logError, logInfo } from "./logger";
-import { extractDateFromTimestamp, isValidNumber } from "./utils";
-
 /**
- * Gets the CORS proxy URL from Roam's native API.
- * Uses roamAlphaAPI.constants.corsAnywhereProxyUrl which is hosted by the Roam team.
- * @see https://roamresearch.com/#/app/developer-documentation/page/TuLoib22N
+ * Oura Cloud API v2 client and DTOs.
+ *
+ * Requests go through `ctx.net.fetch` — the outl host performs the HTTP call
+ * natively (no CORS proxy, unlike the Roam original). The `network:api.ouraring.com`
+ * permission gates it; a denied host comes back as `{ ok: false }`, never a throw.
  */
-function getRoamProxyUrl(): string {
-  const proxyUrl = window.roamAlphaAPI?.constants?.corsAnywhereProxyUrl;
-  if (!proxyUrl) {
-    throw new Error("Roam CORS proxy URL not available. Make sure you are running in Roam Research.");
-  }
-  return proxyUrl;
-}
 
-/**
- * Sleep contributors breakdown from Oura API.
- * Contains individual scores for each sleep quality factor.
- */
+import type { PluginContext } from "./plugin-sdk";
+import { dateFromTimestamp } from "./dates";
+import { isValidNumber } from "./formatters";
+
+const OURA_API_BASE = "https://api.ouraring.com/v2/usercollection";
+/** Oura's single-day queries are flaky; batch up to a week per request. */
+const MAX_DAYS_PER_REQUEST = 7;
+const REQUEST_TIMEOUT_MS = 15_000;
+
 export interface OuraSleepContributors {
   deep_sleep?: number;
   efficiency?: number;
@@ -29,17 +25,9 @@ export interface OuraSleepContributors {
   total_sleep?: number;
 }
 
-/**
- * Daily sleep data from /daily_sleep endpoint.
- * Based on Oura API v2 and training-personal-data Clojure implementation.
- */
 export interface OuraSleep {
-  id?: string;
   day: string;
   score?: number;
-  timestamp?: string;
-  contributors?: OuraSleepContributors;
-  // Direct fields (some APIs return these directly)
   efficiency?: number;
   total_sleep_duration?: number;
   time_in_bed?: number;
@@ -47,7 +35,6 @@ export interface OuraSleep {
   lowest_hr?: number;
   bedtime_start?: string;
   bedtime_end?: string;
-  // Additional fields from API
   awake_time?: number;
   deep_sleep_duration?: number;
   light_sleep_duration?: number;
@@ -55,102 +42,35 @@ export interface OuraSleep {
   restless_periods?: number;
   average_hrv?: number;
   latency?: number;
+  contributors?: OuraSleepContributors;
   [key: string]: unknown;
 }
 
-/**
- * Readiness contributors breakdown from Oura API.
- */
-export interface OuraReadinessContributors {
-  activity_balance?: number;
-  body_temperature?: number;
-  hrv_balance?: number;
-  previous_day_activity?: number;
-  previous_night?: number;
-  recovery_index?: number;
-  resting_heart_rate?: number;
-  sleep_balance?: number;
-}
-
-/**
- * Daily readiness data from /daily_readiness endpoint.
- * Based on Oura API v2 and training-personal-data Clojure implementation.
- */
 export interface OuraReadiness {
-  id?: string;
   day: string;
   score?: number;
-  timestamp?: string;
   temperature_deviation?: number;
   temperature_trend_deviation?: number;
-  contributors?: OuraReadinessContributors;
-  // Legacy score fields (some APIs return these)
-  score_activity_balance?: number;
-  score_sleep_balance?: number;
-  score_previous_day?: number;
-  score_previous_night?: number;
-  score_recovery_index?: number;
-  score_resting_hr?: number;
-  score_hrv_balance?: number;
   [key: string]: unknown;
 }
 
-/**
- * Daily activity data from /daily_activity endpoint.
- * Based on Oura API v2 and training-personal-data Clojure implementation.
- */
 export interface OuraActivity {
-  id?: string;
   day: string;
   score?: number;
-  timestamp?: string;
-  // Movement metrics
   steps?: number;
-  daily_movement?: number;
   equivalent_walking_distance?: number;
-  // Calorie metrics
   active_calories?: number;
   total_calories?: number;
-  target_calories?: number;
-  // Activity time breakdown
-  high_activity_time?: number;
-  medium_activity_time?: number;
-  low_activity_time?: number;
-  sedentary_time?: number;
-  resting_time?: number;
-  non_wear_time?: number;
-  // MET (Metabolic Equivalent) metrics
-  average_met_minutes?: number;
-  high_activity_met_minutes?: number;
-  medium_activity_met_minutes?: number;
-  low_activity_met_minutes?: number;
-  sedentary_met_minutes?: number;
-  // Goals
-  meters_to_target?: number;
-  target_meters?: number;
-  inactivity_alerts?: number;
-  // Detailed data (arrays)
-  class_5_min?: string;
-  met?: { interval?: number; items?: number[]; timestamp?: string };
   [key: string]: unknown;
 }
 
-/**
- * Heart rate sample from /heartrate endpoint.
- */
 export interface OuraHeartRateSample {
   bpm?: number;
-  source?: string;
   timestamp?: string;
   [key: string]: unknown;
 }
 
-/**
- * Workout data from /workout endpoint.
- * Based on Oura API v2 and training-personal-data Clojure implementation.
- */
 export interface OuraWorkout {
-  id?: string;
   day?: string;
   activity?: string;
   sport?: string;
@@ -160,26 +80,17 @@ export interface OuraWorkout {
   calories?: number;
   distance?: number;
   intensity?: string;
-  source?: string;
   [key: string]: unknown;
 }
 
-/**
- * Enhanced tag data from /enhanced_tag endpoint.
- * Note: /tag endpoint is deprecated, using only /enhanced_tag.
- */
 export interface OuraTag {
-  id?: string;
   day?: string;
   start_day?: string;
-  end_day?: string;
   start_time?: string;
-  end_time?: string;
   tag_type_code?: string;
   custom_name?: string;
   comment?: string;
   timestamp?: string;
-  text?: string;
   tags?: string[];
   [key: string]: unknown;
 }
@@ -194,248 +105,129 @@ export interface DailyOuraData {
   tags: OuraTag[];
 }
 
-/**
- * Raw batch data from Oura API (before grouping by date).
- */
-interface BatchOuraData {
-  sleep: OuraSleep[];
-  readiness: OuraReadiness[];
-  activity: OuraActivity[];
-  heartrate: OuraHeartRateSample[];
-  workouts: OuraWorkout[];
-  tags: OuraTag[];
-}
-
 interface CollectionResponse<T> {
   data?: T[];
   next_token?: string;
 }
 
-/**
- * Splits an array of dates into chunks of maximum size.
- * @param dates - Array of date strings (YYYY-MM-DD)
- * @param maxSize - Maximum chunk size (default: 7)
- */
-export function splitDatesIntoChunks(dates: string[], maxSize: number = MAX_DAYS_PER_REQUEST): string[][] {
-  const chunks: string[][] = [];
-  for (let i = 0; i < dates.length; i += maxSize) {
-    chunks.push(dates.slice(i, i + maxSize));
-  }
-  return chunks;
+/** Encode a params object as a query string (Boa has no URLSearchParams). */
+function encodeQuery(params: Record<string, string>): string {
+  return Object.keys(params)
+    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`)
+    .join("&");
 }
 
-/**
- * Fetches all Oura data for a date range in batch (up to 7 days per request).
- * This is more efficient than fetching day by day and avoids API issues with single-day queries.
- * @param token - Oura Personal Access Token
- * @param startDate - Start date (YYYY-MM-DD)
- * @param endDate - End date (YYYY-MM-DD)
- */
-export async function fetchBatchData(
-  token: string,
-  startDate: string,
-  endDate: string
-): Promise<BatchOuraData> {
-  logDebug("fetch_batch_start", { startDate, endDate });
-
-  const [sleep, readiness, activity, workouts, heartrate, tags] = await Promise.all([
-    fetchCollection<OuraSleep>("/daily_sleep", { start_date: startDate, end_date: endDate }, token),
-    fetchCollection<OuraReadiness>("/daily_readiness", { start_date: startDate, end_date: endDate }, token),
-    fetchCollection<OuraActivity>("/daily_activity", { start_date: startDate, end_date: endDate }, token),
-    fetchCollection<OuraWorkout>("/workout", { start_date: startDate, end_date: endDate }, token),
-    fetchCollection<OuraHeartRateSample>(
-      "/heartrate",
-      {
-        start_datetime: `${startDate}T00:00:00Z`,
-        end_datetime: `${endDate}T23:59:59Z`,
-      },
-      token
-    ),
-    // Note: /tag endpoint is deprecated, using only /enhanced_tag
-    fetchCollection<OuraTag>("/enhanced_tag", { start_date: startDate, end_date: endDate }, token),
-  ]);
-
-  logDebug("fetch_batch_complete", {
-    startDate,
-    endDate,
-    sleep: sleep.length,
-    readiness: readiness.length,
-    activity: activity.length,
-    workouts: workouts.length,
-    heartrate: heartrate.length,
-    tags: tags.length,
-  });
-
-  return { sleep, readiness, activity, heartrate, workouts, tags };
-}
-
-/**
- * Groups items by date using a date extractor function.
- */
-function groupItemsByDate<T>(
-  items: T[],
-  result: Map<string, DailyOuraData>,
-  getDate: (item: T) => string | undefined,
-  getArray: (data: DailyOuraData) => T[]
-): void {
-  for (const item of items) {
-    const day = getDate(item);
-    if (day) {
-      const data = result.get(day);
-      if (data) getArray(data).push(item);
-    }
-  }
-}
-
-/**
- * Groups batch data by date, creating DailyOuraData for each requested date.
- * @param batchData - Raw batch data from API
- * @param dates - Array of dates to group by (YYYY-MM-DD)
- */
-export function groupDataByDate(batchData: BatchOuraData, dates: string[]): Map<string, DailyOuraData> {
-  const result = new Map<string, DailyOuraData>();
-
-  // Initialize empty data for each date
-  for (const date of dates) {
-    result.set(date, {
-      date,
-      sleep: [],
-      readiness: [],
-      activity: [],
-      heartrate: [],
-      workouts: [],
-      tags: [],
-    });
-  }
-
-  // Group all data types by their respective date fields
-  groupItemsByDate(batchData.sleep, result, (item) => item.day, (data) => data.sleep);
-  groupItemsByDate(batchData.readiness, result, (item) => item.day, (data) => data.readiness);
-  groupItemsByDate(batchData.activity, result, (item) => item.day, (data) => data.activity);
-  groupItemsByDate(batchData.workouts, result, (item) => item.day ?? extractDateFromTimestamp(item.start_datetime), (data) => data.workouts);
-  groupItemsByDate(batchData.heartrate, result, (item) => extractDateFromTimestamp(item.timestamp), (data) => data.heartrate);
-  groupItemsByDate(batchData.tags, result, (item) => item.start_day ?? item.day ?? extractDateFromTimestamp(item.timestamp), (data) => data.tags);
-
-  return result;
-}
-
-
-/**
- * Fetches all Oura data for multiple dates, using batch requests (max 7 days each).
- * This is the main entry point for fetching Oura data.
- * Uses Roam's native CORS proxy (roamAlphaAPI.constants.corsAnywhereProxyUrl).
- * @param token - Oura Personal Access Token
- * @param dates - Array of dates to fetch (YYYY-MM-DD), most recent first
- */
-export async function fetchAllDailyData(
-  token: string,
-  dates: string[]
-): Promise<Map<string, DailyOuraData>> {
-  if (dates.length === 0) {
-    return new Map();
-  }
-
-  // Sort dates to find min/max for each chunk
-  const sortedDates = [...dates].sort();
-  const chunks = splitDatesIntoChunks(sortedDates);
-
-  logDebug("fetch_all_start", { totalDates: dates.length, chunks: chunks.length });
-
-  const allResults = new Map<string, DailyOuraData>();
-
-  for (const chunk of chunks) {
-    const startDate = chunk[0];
-    const endDate = chunk[chunk.length - 1];
-
-    const batchData = await fetchBatchData(token, startDate, endDate);
-    const groupedData = groupDataByDate(batchData, chunk);
-
-    // Merge into results
-    for (const [date, data] of groupedData) {
-      allResults.set(date, data);
-    }
-  }
-
-  logDebug("fetch_all_complete", { totalDates: allResults.size });
-
-  return allResults;
-}
-
-/**
- * Builds the proxied URL using Roam's native CORS proxy.
- * Format: {proxyUrl}/{targetUrl}
- * @see https://roamresearch.com/#/app/developer-documentation/page/TuLoib22N
- * @param targetUrl - The target URL to proxy
- */
-function buildProxiedUrl(targetUrl: string): string {
-  const proxyUrl = getRoamProxyUrl();
-  return `${proxyUrl}/${targetUrl}`;
-}
-
-/**
- * Fetches a paginated collection from the Oura API.
- * Routes requests through Roam's native CORS proxy.
- * @param path - API endpoint path (e.g., "/daily_sleep")
- * @param params - Query parameters
- * @param token - Oura Personal Access Token
- */
+/** Fetch one paginated Oura collection, following `next_token` to the end. */
 async function fetchCollection<T>(
+  ctx: PluginContext,
   path: string,
   params: Record<string, string>,
   token: string
 ): Promise<T[]> {
-  const allItems: T[] = [];
+  const items: T[] = [];
   let nextToken: string | undefined;
-
   do {
-    const searchParams = new URLSearchParams(params);
-    if (nextToken) {
-      searchParams.set("next_token", nextToken);
-    }
-    const ouraUrl = `${OURA_API_BASE}${path}?${searchParams.toString()}`;
-    const fetchUrl = buildProxiedUrl(ouraUrl);
+    const query: Record<string, string> = { ...params };
+    if (nextToken) query.next_token = nextToken;
+    const url = `${OURA_API_BASE}${path}?${encodeQuery(query)}`;
 
-    logDebug("fetch_request", { url: fetchUrl, ouraUrl });
-
-    const response = await fetch(fetchUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+    const r = await ctx.net.fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeoutMs: REQUEST_TIMEOUT_MS,
     });
-
-    if (!response.ok) {
-      const body = await response.text();
-      logError("oura_api_error", { url: fetchUrl, status: response.status, body });
-      throw new Error(`Oura API request failed (${response.status})`);
+    if (!r.ok) {
+      throw new Error(`Oura ${path} request failed (HTTP ${r.status})`);
     }
-
-    const json = (await response.json()) as CollectionResponse<T>;
-
-    // Log raw response for tag endpoints to help debug missing tags
-    if (path.includes("tag")) {
-      logDebug("tag_api_raw_response", { path, response: json });
-    }
-
-    const items = Array.isArray(json.data) ? json.data : [];
-    allItems.push(...items);
+    const json = (await r.json<CollectionResponse<T>>()) ?? {};
+    const data = Array.isArray(json.data) ? json.data : [];
+    items.push(...data);
     nextToken = json.next_token;
-    logInfo("oura_page_fetched", { path, count: items.length, nextToken });
   } while (nextToken);
-
-  return allItems;
+  return items;
 }
 
+/** Split dates (sorted) into contiguous chunks of at most 7. */
+function chunkDates(dates: string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < dates.length; i += MAX_DAYS_PER_REQUEST) {
+    chunks.push(dates.slice(i, i + MAX_DAYS_PER_REQUEST));
+  }
+  return chunks;
+}
+
+function emptyDay(date: string): DailyOuraData {
+  return { date, sleep: [], readiness: [], activity: [], heartrate: [], workouts: [], tags: [] };
+}
+
+/**
+ * Fetch every data type for `dates` (batched ≤7 days/request, 6 endpoints in
+ * parallel) and group the results by day. `dates` may be in any order; the
+ * returned map is keyed by ISO date.
+ */
+export async function fetchAllDailyData(
+  ctx: PluginContext,
+  token: string,
+  dates: string[]
+): Promise<Map<string, DailyOuraData>> {
+  const result = new Map<string, DailyOuraData>();
+  if (dates.length === 0) return result;
+  for (const d of dates) result.set(d, emptyDay(d));
+
+  const sorted = [...dates].sort();
+  for (const chunk of chunkDates(sorted)) {
+    const start = chunk[0];
+    const end = chunk[chunk.length - 1];
+    const range = { start_date: start, end_date: end };
+
+    const [sleep, readiness, activity, workouts, heartrate, tags] = await Promise.all([
+      fetchCollection<OuraSleep>(ctx, "/daily_sleep", range, token),
+      fetchCollection<OuraReadiness>(ctx, "/daily_readiness", range, token),
+      fetchCollection<OuraActivity>(ctx, "/daily_activity", range, token),
+      fetchCollection<OuraWorkout>(ctx, "/workout", range, token),
+      fetchCollection<OuraHeartRateSample>(
+        ctx,
+        "/heartrate",
+        { start_datetime: `${start}T00:00:00Z`, end_datetime: `${end}T23:59:59Z` },
+        token
+      ),
+      // `/tag` is deprecated — use `/enhanced_tag` only.
+      fetchCollection<OuraTag>(ctx, "/enhanced_tag", range, token),
+    ]);
+
+    group(sleep, result, (x) => x.day, (d) => d.sleep);
+    group(readiness, result, (x) => x.day, (d) => d.readiness);
+    group(activity, result, (x) => x.day, (d) => d.activity);
+    group(workouts, result, (x) => x.day ?? dateFromTimestamp(x.start_datetime), (d) => d.workouts);
+    group(heartrate, result, (x) => dateFromTimestamp(x.timestamp), (d) => d.heartrate);
+    group(tags, result, (x) => x.start_day ?? x.day ?? dateFromTimestamp(x.timestamp), (d) => d.tags);
+  }
+  return result;
+}
+
+function group<T>(
+  items: T[],
+  into: Map<string, DailyOuraData>,
+  getDate: (item: T) => string | undefined,
+  pick: (day: DailyOuraData) => T[]
+): void {
+  for (const item of items) {
+    const day = getDate(item);
+    if (!day) continue;
+    const bucket = into.get(day);
+    if (bucket) pick(bucket).push(item);
+  }
+}
+
+/** min / max / average bpm across heart-rate samples. */
 export function summarizeHeartRate(samples: OuraHeartRateSample[]): {
   min?: number;
   max?: number;
   average?: number;
 } {
-  const values = samples.map((sample) => sample.bpm).filter(isValidNumber);
-  if (values.length === 0) {
-    return {};
-  }
+  const values = samples.map((s) => s.bpm).filter(isValidNumber);
+  if (values.length === 0) return {};
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const average = Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+  const average = Math.round(values.reduce((sum, v) => sum + v, 0) / values.length);
   return { min, max, average };
 }
