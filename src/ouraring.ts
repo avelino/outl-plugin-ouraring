@@ -6,7 +6,7 @@
  * permission gates it; a denied host comes back as `{ ok: false }`, never a throw.
  */
 
-import type { PluginContext } from "./plugin-sdk";
+import type { PluginContext } from "@outl/plugin-sdk";
 import { dateFromTimestamp } from "./dates";
 import { isValidNumber } from "./formatters";
 

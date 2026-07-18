@@ -13,7 +13,7 @@
  *   outl plugin secret set run.avelino.ouraring token
  */
 
-import { definePlugin, type PluginContext } from "./plugin-sdk";
+import { definePlugin, type PluginContext } from "@outl/plugin-sdk";
 import { buildDateRange, isIsoDate } from "./dates";
 import { fetchAllDailyData } from "./ouraring";
 import { writeDailyOuraPage, type DaySyncResult } from "./blocks";

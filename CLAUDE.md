@@ -11,8 +11,8 @@ pages `pages/<prefix>-YYYY-MM-DD.md`.
   `oura-sync` command (slash + toolbar).
 - **Config:** `config.schema.json` — `pagePrefix`, `daysToSync`, and `token`
   (marked `x-outl-secret`, so it lives in the OS keychain via `ctx.secrets`).
-- **SDK:** `src/plugin-sdk.ts` is a **vendored** copy of `@outl/plugin-sdk`
-  (not on npm). Keep in sync with `avelino/outl:plugin-sdk/src/index.ts`.
+- **SDK:** `@outl/plugin-sdk` (npm dependency, `^1.0.0`) — types-only contract
+  plus `definePlugin`. Source: `avelino/outl:plugin-sdk`.
 
 ## Modules
 
@@ -74,4 +74,4 @@ bun run build       # esbuild → index.js
 - [ ] `bun run build` produces `index.js`.
 - [ ] Smoke-tested via `outl plugin install . --yes` + `outl plugin run … oura-sync`.
 - [ ] CHANGELOG updated.
-- [ ] `src/plugin-sdk.ts` still matches the upstream SDK if you touched APIs.
+- [ ] `@outl/plugin-sdk` pinned to a published version if you touched APIs.

@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // src/plugin-sdk.ts
+  // node_modules/@outl/plugin-sdk/src/index.ts
   function definePlugin(def) {
     if (def === null || typeof def !== "object") {
       throw new TypeError("definePlugin: expected a plugin definition object");
@@ -371,4 +371,3 @@
     }
   });
 })();
-//# sourceMappingURL=index.js.map

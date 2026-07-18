@@ -17,7 +17,7 @@
  *       Tag — 22:00 [[No Caffeine]]
  */
 
-import type { Block, PluginContext, TreeNode } from "./plugin-sdk";
+import type { Block, PluginContext, TreeNode } from "@outl/plugin-sdk";
 import {
   clockTime,
   duration,
