@@ -14,7 +14,7 @@
     "@outl/plugin-sdk": "0.8.0-beta.132"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0",
+    "esbuild": "^0.28.2",
     "typescript": "^5.9.0"
   }
 }
